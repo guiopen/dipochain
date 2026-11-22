@@ -592,9 +592,11 @@ export default function App() {
                   }}
                 >
                   <input type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJsonFile(e.target.files[0])} />
-                  <span className="dropzone-tag">Upload .json</span>
-                  <div className="dropzone-title">Arraste o arquivo .json da credencial ou clique para selecionar</div>
-                  <div className="dropzone-sub">Os dados da credencial são validados no navegador, sem envio a servidores.</div>
+                  <span className="dropzone-tag">Credencial (.json)</span>
+                  <div className="dropzone-title">Arraste o arquivo .json gerado pelo DiploChain ou clique para selecionar</div>
+                  <div className="dropzone-sub">
+                    Arquivo obtido na emissão da credencial. A validação ocorre no navegador, sem envio a servidores.
+                  </div>
                 </div>
 
                 <div className={`collapse-wrap ${showPaste ? "open" : ""}`}>
@@ -742,7 +744,7 @@ export default function App() {
                         rows={4}
                         value={batchInput}
                         onChange={(e) => setBatchInput(e.target.value)}
-                        placeholder={"Maria Silva\nJoão Santos\nAna Costa"}
+                        placeholder={"Um nome por linha (ex: Maria Silva)\nou CSV: Maria Silva,Arquitetura Blockchain,60"}
                       />
                     </div>
                   )}
