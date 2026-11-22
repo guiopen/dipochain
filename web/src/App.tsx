@@ -36,8 +36,6 @@ import {
 type TabId = "verify" | "issuer" | "governance";
 type IssueMode = "single" | "batch";
 
-const TAB_ORDER: TabId[] = ["verify", "issuer", "governance"];
-
 interface OnChainIssuerInfo {
   issuerId: string;
   did: string;
@@ -45,40 +43,59 @@ interface OnChainIssuerInfo {
   status: number;
   recoverySigner: string;
   closedAt: number;
-  keys: Array<{
-    keyId: string;
-    signer: string;
-    validFrom: number;
-    validUntil: number;
-    compromisedAt: number;
-  }>;
+  keys: Array<{ keyId: string; signer: string; validFrom: number; validUntil: number; compromisedAt: number }>;
 }
 
-function shortAddr(addr: string): string {
-  return addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
-}
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: "verify", label: "Verificar" },
+  { id: "issuer", label: "Emitir" },
+  { id: "governance", label: "Governança" }
+];
 
-function verdictTone(verdict: string): "ok" | "warn" | "err" {
-  if (verdict === "VALID") return "ok";
-  if (verdict === "VALID - ISSUER CLOSED" || verdict.includes("UNDER REVIEW")) return "warn";
-  return "err";
-}
+const VERDICT_LABELS: Record<string, string> = {
+  VALID: "Credencial Válida",
+  "VALID - ISSUER CLOSED": "Válida (Emissor Encerrado)",
+  REVOKED: "Credencial Revogada",
+  "ISSUER SUSPENDED": "Emissor Suspenso",
+  "ISSUED AFTER KEY COMPROMISE - UNDER REVIEW": "Sob Revisão (Pós-Comprometimento)",
+  "INVALID SIGNATURE": "Assinatura Inválida",
+  TAMPERED: "Credencial Adulterada",
+  "ISSUER NOT REGISTERED": "Emissor Não Registrado",
+  "ANCHOR NOT FOUND": "Âncora Não Encontrada",
+  EXPIRED: "Credencial Expirada"
+};
 
-function verdictPtLabel(verdict: string): string {
-  const map: Record<string, string> = {
-    VALID: "Credencial Válida",
-    "VALID - ISSUER CLOSED": "Válida (Emissor Encerrado)",
-    REVOKED: "Credencial Revogada",
-    "ISSUER SUSPENDED": "Emissor Suspenso",
-    "ISSUED AFTER KEY COMPROMISE - UNDER REVIEW": "Sob Revisão (Pós-Comprometimento)",
-    "INVALID SIGNATURE": "Assinatura Inválida",
-    TAMPERED: "Credencial Adulterada",
-    "ISSUER NOT REGISTERED": "Emissor Não Registrado",
-    "ANCHOR NOT FOUND": "Âncora Não Encontrada",
-    EXPIRED: "Credencial Expirada"
-  };
-  return map[verdict] || verdict;
-}
+const IDLE_DIMENSIONS = [
+  {
+    cls: "idle-1",
+    title: "1. Autenticidade",
+    chip: "Assinatura e Merkle",
+    body: "Valida a assinatura ECDSA secp256k1, o hash com salt (JCS) e a prova de inclusão na raiz de Merkle ancorada."
+  },
+  {
+    cls: "idle-2",
+    title: "2. Emissor",
+    chip: "Registro on-chain",
+    body: "Consulta no contrato o DID do emissor, o nível de garantia (L1 ou L2) e a janela de validade da chave."
+  },
+  {
+    cls: "idle-3",
+    title: "3. Validade Acadêmica",
+    chip: "Fora da chain",
+    body: "Declarada pelo emissor na própria credencial. O reconhecimento acadêmico e legal fica fora da verificação técnica."
+  },
+  {
+    cls: "idle-4",
+    title: "4. Revogação e Prazo",
+    chip: "Status on-chain",
+    body: "Confere o registro permanente de revogação no contrato, o código de motivo e o campo validUntil."
+  }
+];
+
+const shortAddr = (addr: string) => (addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr);
+const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const verdictTone = (v: string): "ok" | "warn" | "err" =>
+  v === "VALID" ? "ok" : v === "VALID - ISSUER CLOSED" || v.includes("UNDER REVIEW") ? "warn" : "err";
 
 export default function App() {
   const [tab, setTab] = useState<TabId>("verify");
@@ -90,9 +107,9 @@ export default function App() {
 
   const [rpcUrl, setRpcUrl] = useState(DEFAULT_RPC_URL);
   const [contractAddress, setContractAddress] = useState("");
-  const [chainId, setChainId] = useState<number>(31337);
+  const [chainId, setChainId] = useState(31337);
   const [connected, setConnected] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<{ tone: "ok" | "warn" | "err" | "info"; text: string } | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ tone: "ok" | "warn" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [vcText, setVcText] = useState("");
@@ -116,10 +133,34 @@ export default function App() {
   const [newIssuerLevel, setNewIssuerLevel] = useState(1);
   const [compromiseSecondsAgo, setCompromiseSecondsAgo] = useState(30);
 
+  const activeTabIndex = TABS.findIndex((t) => t.id === tab);
+  const activeKey = activeKeyIndex === 0 ? DEMO_ACCOUNTS.issuer1 : DEMO_ACCOUNTS.issuer2;
+  const activeKeyMethod = activeKeyIndex === 0 ? DEMO_KEY_METHOD_1 : DEMO_KEY_METHOD_2;
+
   function switchTab(next: TabId) {
     if (next === tab) return;
-    setSlideDir(TAB_ORDER.indexOf(next) > TAB_ORDER.indexOf(tab) ? "right" : "left");
+    setSlideDir(TABS.findIndex((t) => t.id === next) > activeTabIndex ? "right" : "left");
     setTab(next);
+  }
+
+  async function runAction(errorPrefix: string, fn: () => Promise<void>) {
+    setBusy(true);
+    setStatusMsg(null);
+    try {
+      await fn();
+    } catch (err) {
+      setStatusMsg({ tone: "err", text: `${errorPrefix}: ${errMsg(err)}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connectChain(senderPrivateKey?: string) {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const activeChainId = Number((await provider.getNetwork()).chainId);
+    const runner = senderPrivateKey ? new ethers.Wallet(senderPrivateKey, provider) : provider;
+    const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, runner);
+    return { provider, activeChainId, contract };
   }
 
   useEffect(() => {
@@ -133,98 +174,73 @@ export default function App() {
       })
       .catch(() => {});
 
-    const params = new URLSearchParams(window.location.search);
-    const encoded = params.get("vc");
-    if (encoded) {
-      try {
-        const decoded = decodeVcFromUrlParam(encoded);
-        setVcText(JSON.stringify(decoded, null, 2));
-        setLoadedVc(decoded);
-        if (decoded.anchorReference?.anchorRegistry) {
-          setContractAddress(decoded.anchorReference.anchorRegistry);
-        }
-        verifyCredentialOnChain(decoded, DEFAULT_RPC_URL, decoded.anchorReference?.anchorRegistry)
-          .then(setVerifyResult)
-          .catch(() => {});
-      } catch {
-        setStatusMsg({ tone: "err", text: "Falha ao ler a credencial do link." });
-      }
+    const encoded = new URLSearchParams(window.location.search).get("vc");
+    if (!encoded) return;
+    try {
+      const decoded = decodeVcFromUrlParam(encoded);
+      setVcText(JSON.stringify(decoded, null, 2));
+      setLoadedVc(decoded);
+      if (decoded.anchorReference?.anchorRegistry) setContractAddress(decoded.anchorReference.anchorRegistry);
+      verifyCredentialOnChain(decoded, DEFAULT_RPC_URL, decoded.anchorReference?.anchorRegistry)
+        .then(setVerifyResult)
+        .catch(() => {});
+    } catch {
+      setStatusMsg({ tone: "err", text: "Falha ao ler a credencial do link." });
     }
   }, []);
 
   async function refreshChainState() {
-    if (!contractAddress) {
-      setConnected(false);
-      return;
-    }
+    if (!contractAddress) return setConnected(false);
     try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const net = await provider.getNetwork();
-      setChainId(Number(net.chainId));
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, provider);
+      const { activeChainId, contract } = await connectChain();
+      setChainId(activeChainId);
       const ids: string[] = await contract.getIssuerIds();
-      const list: OnChainIssuerInfo[] = [];
-      for (const id of ids) {
-        const rec = await contract.issuers(id);
-        const keyIds: string[] = await contract.getIssuerKeyIds(id);
-        const keys = [];
-        for (const kid of keyIds) {
-          const k = await contract.issuerKeys(id, kid);
-          keys.push({
-            keyId: kid,
-            signer: String(k.signer),
-            validFrom: Number(k.validFrom),
-            validUntil: Number(k.validUntil),
-            compromisedAt: Number(k.compromisedAt)
-          });
-        }
-        list.push({
-          issuerId: id,
-          did: String(rec.did),
-          assuranceLevel: Number(rec.assuranceLevel),
-          status: Number(rec.status),
-          recoverySigner: String(rec.recoverySigner),
-          closedAt: Number(rec.closedAt),
-          keys
-        });
-      }
+      const list: OnChainIssuerInfo[] = await Promise.all(
+        ids.map(async (id) => {
+          const [rec, keyIds] = await Promise.all([contract.issuers(id), contract.getIssuerKeyIds(id)]);
+          const keys = await Promise.all(
+            (keyIds as string[]).map(async (kid) => {
+              const k = await contract.issuerKeys(id, kid);
+              return {
+                keyId: kid,
+                signer: String(k.signer),
+                validFrom: Number(k.validFrom),
+                validUntil: Number(k.validUntil),
+                compromisedAt: Number(k.compromisedAt)
+              };
+            })
+          );
+          return {
+            issuerId: id,
+            did: String(rec.did),
+            assuranceLevel: Number(rec.assuranceLevel),
+            status: Number(rec.status),
+            recoverySigner: String(rec.recoverySigner),
+            closedAt: Number(rec.closedAt),
+            keys
+          };
+        })
+      );
       setIssuers(list);
       setConnected(true);
       const demo = list.find((i) => i.did === DEMO_ISSUER_DID);
-      if (demo && demo.keys.length >= 2) {
-        const key2Id = computeKeyId(DEMO_KEY_METHOD_2).toLowerCase();
-        if (demo.keys.some((k) => k.keyId.toLowerCase() === key2Id && k.validUntil === 0)) {
-          setActiveKeyIndex(1);
-        }
-      }
+      const key2Id = computeKeyId(DEMO_KEY_METHOD_2).toLowerCase();
+      if (demo?.keys.some((k) => k.keyId.toLowerCase() === key2Id && k.validUntil === 0)) setActiveKeyIndex(1);
     } catch {
       setConnected(false);
     }
   }
 
   useEffect(() => {
-    if (contractAddress) {
-      refreshChainState();
-    }
+    if (contractAddress) refreshChainState();
   }, [contractAddress, rpcUrl]);
 
-  async function runVerification(vcOverride?: VerifiableCredential) {
-    setBusy(true);
-    setStatusMsg(null);
-    try {
+  const runVerification = (vcOverride?: VerifiableCredential) =>
+    runAction("Não foi possível verificar", async () => {
       const parsed = vcOverride || (JSON.parse(vcText) as VerifiableCredential);
       setLoadedVc(parsed);
-      const res = await verifyCredentialOnChain(parsed, rpcUrl, contractAddress || undefined);
-      setVerifyResult(res);
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Não foi possível verificar: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
+      setVerifyResult(await verifyCredentialOnChain(parsed, rpcUrl, contractAddress || undefined));
+    });
 
   function loadJsonFile(file: File) {
     const reader = new FileReader();
@@ -232,8 +248,7 @@ export default function App() {
       const text = String(reader.result || "");
       setVcText(text);
       try {
-        const parsed = JSON.parse(text) as VerifiableCredential;
-        runVerification(parsed);
+        runVerification(JSON.parse(text) as VerifiableCredential);
       } catch {
         setStatusMsg({ tone: "err", text: "Arquivo JSON inválido." });
       }
@@ -241,36 +256,31 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  function simulateTamperN1() {
-    if (!loadedVc) return;
-    const tampered: VerifiableCredential = {
-      ...loadedVc,
-      credentialSubject: {
-        ...loadedVc.credentialSubject,
-        workloadHours: loadedVc.credentialSubject.workloadHours + 500
-      }
-    };
-    setVcText(JSON.stringify(tampered, null, 2));
-    runVerification(tampered);
+  function testModifiedVc(vc: VerifiableCredential) {
+    setVcText(JSON.stringify(vc, null, 2));
+    runVerification(vc);
   }
 
-  function simulateUnanchoredN6() {
-    if (!loadedVc) return;
-    const unanchored: VerifiableCredential = {
+  const simulateTamperN1 = () =>
+    loadedVc &&
+    testModifiedVc({
+      ...loadedVc,
+      credentialSubject: { ...loadedVc.credentialSubject, workloadHours: loadedVc.credentialSubject.workloadHours + 500 }
+    });
+
+  const simulateUnanchoredN6 = () =>
+    loadedVc &&
+    testModifiedVc({
       ...loadedVc,
       anchorReference: {
         ...loadedVc.anchorReference,
         merkleRoot: ethers.keccak256(ethers.toUtf8Bytes("non-existent-root-" + Date.now())),
         txHash: ethers.ZeroHash
       }
-    };
-    setVcText(JSON.stringify(unanchored, null, 2));
-    runVerification(unanchored);
-  }
+    });
 
-  async function simulateUnregisteredN2() {
-    setBusy(true);
-    try {
+  const simulateUnregisteredN2 = () =>
+    runAction("Não foi possível verificar", async () => {
       const rogue = ethers.Wallet.createRandom();
       const core: VcCore = {
         "@context": ["https://www.w3.org/ns/credentials/v2"],
@@ -278,340 +288,194 @@ export default function App() {
         type: ["VerifiableCredential", "AcademicCertificate"],
         issuer: "did:web:falsa-instituicao.edu",
         validFrom: new Date().toISOString(),
-        credentialSubject: {
-          id: "urn:diplochain:holder:rogue",
-          name: "Aluno Teste",
-          course: "Curso Não Credenciado",
-          workloadHours: 100
-        },
+        credentialSubject: { id: "urn:diplochain:holder:rogue", name: "Aluno Teste", course: "Curso Não Credenciado", workloadHours: 100 },
         salt: generateSalt()
       };
-      const proofValue = await signVcCore(core, rogue);
       const fakeVc: VerifiableCredential = {
         ...core,
-        proof: {
-          type: "EcdsaSecp256k1Signature2019",
-          verificationMethod: "did:web:falsa-instituicao.edu#key-1",
-          proofPurpose: "assertionMethod",
-          proofValue
-        },
-        anchorReference: {
-          chainId,
-          anchorRegistry: contractAddress,
-          merkleRoot: computeLeafHash(core),
-          merkleProof: [],
-          txHash: ethers.ZeroHash
-        }
+        proof: { type: "EcdsaSecp256k1Signature2019", verificationMethod: "did:web:falsa-instituicao.edu#key-1", proofPurpose: "assertionMethod", proofValue: await signVcCore(core, rogue) },
+        anchorReference: { chainId, anchorRegistry: contractAddress, merkleRoot: computeLeafHash(core), merkleProof: [], txHash: ethers.ZeroHash }
       };
       setVcText(JSON.stringify(fakeVc, null, 2));
-      await runVerification(fakeVc);
-    } finally {
-      setBusy(false);
-    }
-  }
+      setLoadedVc(fakeVc);
+      setVerifyResult(await verifyCredentialOnChain(fakeVc, rpcUrl, contractAddress || undefined));
+    });
 
-  async function issueCredentials(count: number) {
-    if (!contractAddress) {
-      setStatusMsg({ tone: "err", text: "Contrato não configurado. Abra o painel de rede no topo." });
-      return;
-    }
-    setBusy(true);
-    setStatusMsg(null);
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const net = await provider.getNetwork();
-      const activeChainId = Number(net.chainId);
-      const keyConfig = activeKeyIndex === 0 ? DEMO_ACCOUNTS.issuer1 : DEMO_ACCOUNTS.issuer2;
-      const keyMethod = activeKeyIndex === 0 ? DEMO_KEY_METHOD_1 : DEMO_KEY_METHOD_2;
-
-      const issuerWallet = new ethers.Wallet(keyConfig.privateKey, provider);
-      const relayerWallet = new ethers.Wallet(DEMO_ACCOUNTS.relayer.privateKey, provider);
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, relayerWallet);
-
+  function issueCredentials(count: number) {
+    if (!contractAddress) return setStatusMsg({ tone: "err", text: "Contrato não configurado. Abra o painel de rede no topo." });
+    runAction("Erro ao emitir", async () => {
+      const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
+      const issuerWallet = new ethers.Wallet(activeKey.privateKey, provider);
       const issuerId = computeIssuerId(DEMO_ISSUER_DID);
-      const keyId = computeKeyId(keyMethod);
+      const keyId = computeKeyId(activeKeyMethod);
       const schemaId = ethers.keccak256(ethers.toUtf8Bytes(DEFAULT_SCHEMA_NAME));
 
       const started = performance.now();
-      const cores: VcCore[] = [];
-      for (let i = 0; i < count; i++) {
-        cores.push({
-          "@context": ["https://www.w3.org/ns/credentials/v2"],
-          id: `urn:uuid:${Date.now()}-${i}`,
-          type: ["VerifiableCredential", "AcademicCertificate"],
-          issuer: DEMO_ISSUER_DID,
-          validFrom: new Date().toISOString(),
-          ...(validUntil ? { validUntil: new Date(validUntil).toISOString() } : {}),
-          credentialSubject: {
-            id: `urn:diplochain:holder:${Date.now()}-${i}`,
-            name: count === 1 ? holderName : `${holderName} #${i + 1}`,
-            course: courseName,
-            workloadHours: Number(workloadHours)
-          },
-          salt: generateSalt()
-        });
-      }
+      const nowIso = new Date().toISOString();
+      const cores: VcCore[] = Array.from({ length: count }, (_, i) => ({
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: `urn:uuid:${Date.now()}-${i}`,
+        type: ["VerifiableCredential", "AcademicCertificate"],
+        issuer: DEMO_ISSUER_DID,
+        validFrom: nowIso,
+        ...(validUntil ? { validUntil: new Date(validUntil).toISOString() } : {}),
+        credentialSubject: {
+          id: `urn:diplochain:holder:${Date.now()}-${i}`,
+          name: count === 1 ? holderName : `${holderName} #${i + 1}`,
+          course: courseName,
+          workloadHours: Number(workloadHours)
+        },
+        salt: generateSalt()
+      }));
 
-      const leaves = cores.map(computeLeafHash);
-      const { root, proofs } = buildMerkleTree(leaves);
-
+      const { root, proofs } = buildMerkleTree(cores.map(computeLeafHash));
       const nonce: bigint = await contract.nonces(issuerId);
-      const sig = await signAnchorTypedData(
-        contractAddress,
-        activeChainId,
-        issuerWallet,
-        issuerId,
-        root,
-        count,
-        schemaId,
-        keyId,
-        nonce
-      );
-
+      const sig = await signAnchorTypedData(contractAddress, activeChainId, issuerWallet, issuerId, root, count, schemaId, keyId, nonce);
       const tx = await contract.anchor(issuerId, root, count, schemaId, keyId, nonce, sig);
       const receipt = await tx.wait();
-      const elapsedMs = (performance.now() - started).toFixed(0);
+
+      const newVcs: VerifiableCredential[] = await Promise.all(
+        cores.slice(0, Math.min(count, 10)).map(async (core, i) => ({
+          ...core,
+          proof: { type: "EcdsaSecp256k1Signature2019", verificationMethod: activeKeyMethod, proofPurpose: "assertionMethod", proofValue: await signVcCore(core, issuerWallet) },
+          anchorReference: { chainId: activeChainId, anchorRegistry: contractAddress, merkleRoot: root, merkleProof: proofs[i], txHash: tx.hash }
+        }))
+      );
+
       const gasUsed = Number(receipt.gasUsed);
-
-      const sampleLimit = Math.min(count, 10);
-      const newVcs: VerifiableCredential[] = [];
-      for (let i = 0; i < sampleLimit; i++) {
-        const proofValue = await signVcCore(cores[i], issuerWallet);
-        newVcs.push({
-          ...cores[i],
-          proof: {
-            type: "EcdsaSecp256k1Signature2019",
-            verificationMethod: keyMethod,
-            proofPurpose: "assertionMethod",
-            proofValue
-          },
-          anchorReference: {
-            chainId: activeChainId,
-            anchorRegistry: contractAddress,
-            merkleRoot: root,
-            merkleProof: proofs[i],
-            txHash: tx.hash
-          }
-        });
-      }
-
       setIssuedVcs((prev) => [...newVcs, ...prev]);
       setStatusMsg({
         tone: "ok",
-        text: `${count} credencial(is) ancoradas em 1 transação · ${gasUsed.toLocaleString()} gás (${(gasUsed / count).toFixed(1)} gás/cred) · ${elapsedMs} ms`
+        text: `${count} credencial(is) ancoradas em 1 transação · ${gasUsed.toLocaleString()} gás (${(gasUsed / count).toFixed(1)} gás/cred) · ${(performance.now() - started).toFixed(0)} ms`
       });
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Erro ao emitir: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
-  async function revokeVc(vc: VerifiableCredential) {
-    setBusy(true);
-    setStatusMsg(null);
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const net = await provider.getNetwork();
-      const keyConfig = activeKeyIndex === 0 ? DEMO_ACCOUNTS.issuer1 : DEMO_ACCOUNTS.issuer2;
-      const keyMethod = activeKeyIndex === 0 ? DEMO_KEY_METHOD_1 : DEMO_KEY_METHOD_2;
-
-      const issuerWallet = new ethers.Wallet(keyConfig.privateKey, provider);
-      const relayerWallet = new ethers.Wallet(DEMO_ACCOUNTS.relayer.privateKey, provider);
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, relayerWallet);
-
+  const revokeVc = (vc: VerifiableCredential) =>
+    runAction("Erro ao revogar", async () => {
+      const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
+      const issuerWallet = new ethers.Wallet(activeKey.privateKey, provider);
       const issuerId = computeIssuerId(vc.issuer);
-      const keyId = computeKeyId(keyMethod);
+      const keyId = computeKeyId(activeKeyMethod);
       const leafHash = computeLeafHash(stripEnvelope(vc));
       const nonce: bigint = await contract.nonces(issuerId);
+      const sig = await signRevokeTypedData(contractAddress, activeChainId, issuerWallet, issuerId, leafHash, revokeReason, keyId, nonce);
+      await (await contract.revoke(issuerId, leafHash, revokeReason, keyId, nonce, sig)).wait();
+      setStatusMsg({ tone: "warn", text: `Credencial de ${vc.credentialSubject.name} revogada (${REVOCATION_REASON_LABELS[revokeReason]}).` });
+    });
 
-      const sig = await signRevokeTypedData(
-        contractAddress,
-        Number(net.chainId),
-        issuerWallet,
-        issuerId,
-        leafHash,
-        revokeReason,
-        keyId,
-        nonce
-      );
-
-      const tx = await contract.revoke(issuerId, leafHash, revokeReason, keyId, nonce, sig);
-      await tx.wait();
-      setStatusMsg({
-        tone: "warn",
-        text: `Credencial de ${vc.credentialSubject.name} revogada (${REVOCATION_REASON_LABELS[revokeReason]}).`
-      });
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Erro ao revogar: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function rotateDemoIssuerKey() {
-    setBusy(true);
-    setStatusMsg(null);
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const net = await provider.getNetwork();
+  const rotateDemoIssuerKey = () =>
+    runAction("Erro ao rotacionar chave", async () => {
+      const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
       const oldWallet = new ethers.Wallet(DEMO_ACCOUNTS.issuer1.privateKey, provider);
-      const relayerWallet = new ethers.Wallet(DEMO_ACCOUNTS.relayer.privateKey, provider);
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, relayerWallet);
-
       const issuerId = computeIssuerId(DEMO_ISSUER_DID);
       const oldKeyId = computeKeyId(DEMO_KEY_METHOD_1);
       const newKeyId = computeKeyId(DEMO_KEY_METHOD_2);
       const nonce: bigint = await contract.nonces(issuerId);
-
-      const sig = await signRotateKeyTypedData(
-        contractAddress,
-        Number(net.chainId),
-        oldWallet,
-        issuerId,
-        oldKeyId,
-        newKeyId,
-        DEMO_ACCOUNTS.issuer2.address,
-        nonce
-      );
-
-      const tx = await contract.rotateKey(issuerId, oldKeyId, newKeyId, DEMO_ACCOUNTS.issuer2.address, nonce, sig);
-      await tx.wait();
+      const sig = await signRotateKeyTypedData(contractAddress, activeChainId, oldWallet, issuerId, oldKeyId, newKeyId, DEMO_ACCOUNTS.issuer2.address, nonce);
+      await (await contract.rotateKey(issuerId, oldKeyId, newKeyId, DEMO_ACCOUNTS.issuer2.address, nonce, sig)).wait();
       setActiveKeyIndex(1);
       await refreshChainState();
-      setStatusMsg({
-        tone: "ok",
-        text: "Chave rotacionada para #key-2027-1. Credenciais antigas permanecem válidas."
-      });
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Erro ao rotacionar chave: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
+      setStatusMsg({ tone: "ok", text: "Chave rotacionada para #key-2027-1. Credenciais antigas permanecem válidas." });
+    });
 
-  async function openQrModal(vc: VerifiableCredential) {
-    const encoded = encodeVcToUrlParam(vc);
-    const verifyUrl = `${window.location.origin}/?vc=${encoded}`;
-    const dataUrl = await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1 });
-    setQrModal({ vc, dataUrl, verifyUrl });
-  }
-
-  function downloadVcJson(vc: VerifiableCredential) {
-    const blob = new Blob([JSON.stringify(vc, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `vc-${vc.credentialSubject.name.toLowerCase().replace(/\s+/g, "-")}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function updateIssuerStatus(issuerId: string, newStatus: number) {
-    setBusy(true);
-    setStatusMsg(null);
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const govWallet = new ethers.Wallet(DEMO_ACCOUNTS.governance.privateKey, provider);
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, govWallet);
-      const tx = await contract.setIssuerStatus(issuerId, newStatus);
-      await tx.wait();
+  const updateIssuerStatus = (issuerId: string, newStatus: number) =>
+    runAction("Erro ao alterar status", async () => {
+      const { contract } = await connectChain(DEMO_ACCOUNTS.governance.privateKey);
+      await (await contract.setIssuerStatus(issuerId, newStatus)).wait();
       await refreshChainState();
-      setStatusMsg({
-        tone: "ok",
-        text: `Status alterado para ${ISSUER_STATUS_LABELS[newStatus]}.`
-      });
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Erro ao alterar status: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
+      setStatusMsg({ tone: "ok", text: `Status alterado para ${ISSUER_STATUS_LABELS[newStatus]}.` });
+    });
 
-  async function registerNewIssuer() {
-    setBusy(true);
-    setStatusMsg(null);
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const govWallet = new ethers.Wallet(DEMO_ACCOUNTS.governance.privateKey, provider);
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, govWallet);
-      const randomKey = ethers.Wallet.createRandom();
+  const registerNewIssuer = () =>
+    runAction("Erro ao registrar", async () => {
+      const { contract } = await connectChain(DEMO_ACCOUNTS.governance.privateKey);
       const keyId = computeKeyId(`${newIssuerDid}#key-1`);
-      const tx = await contract.registerIssuer(
-        newIssuerDid,
-        newIssuerLevel,
-        DEMO_ACCOUNTS.recovery.address,
-        keyId,
-        randomKey.address
-      );
-      await tx.wait();
+      await (
+        await contract.registerIssuer(newIssuerDid, newIssuerLevel, DEMO_ACCOUNTS.recovery.address, keyId, ethers.Wallet.createRandom().address)
+      ).wait();
       await refreshChainState();
       setStatusMsg({ tone: "ok", text: `Emissor ${newIssuerDid} registrado.` });
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Erro ao registrar: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
+    });
 
-  async function reportDemoCompromise(issuerId: string, keyId: string) {
-    setBusy(true);
-    setStatusMsg(null);
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const net = await provider.getNetwork();
+  const reportDemoCompromise = (issuerId: string, keyId: string) =>
+    runAction("Erro ao reportar comprometimento", async () => {
+      const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
       const block = await provider.getBlock("latest");
-      const nowBlockTs = block ? Number(block.timestamp) : Math.floor(Date.now() / 1000);
-      const estimatedTime = Math.max(1, nowBlockTs - Number(compromiseSecondsAgo));
-
+      const estimatedTime = Math.max(1, (block ? Number(block.timestamp) : Math.floor(Date.now() / 1000)) - Number(compromiseSecondsAgo));
       const recoveryWallet = new ethers.Wallet(DEMO_ACCOUNTS.recovery.privateKey, provider);
-      const relayerWallet = new ethers.Wallet(DEMO_ACCOUNTS.relayer.privateKey, provider);
-      const contract = new ethers.Contract(contractAddress, DIPLOCHAIN_ABI, relayerWallet);
-
       const nonce: bigint = await contract.nonces(issuerId);
-      const sig = await signCompromiseTypedData(
-        contractAddress,
-        Number(net.chainId),
-        recoveryWallet,
-        issuerId,
-        keyId,
-        estimatedTime,
-        nonce
-      );
-
-      const tx = await contract.reportCompromise(issuerId, keyId, estimatedTime, nonce, sig);
-      await tx.wait();
+      const sig = await signCompromiseTypedData(contractAddress, activeChainId, recoveryWallet, issuerId, keyId, estimatedTime, nonce);
+      await (await contract.reportCompromise(issuerId, keyId, estimatedTime, nonce, sig)).wait();
       await refreshChainState();
       setStatusMsg({
         tone: "warn",
         text: `Comprometimento registrado (${new Date(estimatedTime * 1000).toLocaleTimeString()}). Credenciais anteriores seguem válidas; posteriores ficam sob revisão.`
       });
-    } catch (err) {
-      setStatusMsg({
-        tone: "err",
-        text: `Erro ao reportar comprometimento: ${err instanceof Error ? err.message : String(err)}`
-      });
-    } finally {
-      setBusy(false);
-    }
+    });
+
+  async function openQrModal(vc: VerifiableCredential) {
+    const verifyUrl = `${window.location.origin}/?vc=${encodeVcToUrlParam(vc)}`;
+    setQrModal({ vc, dataUrl: await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1 }), verifyUrl });
   }
 
-  const activeTabIndex = TAB_ORDER.indexOf(tab);
+  function downloadVcJson(vc: VerifiableCredential) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(vc, null, 2)], { type: "application/json" }));
+    const a = Object.assign(document.createElement("a"), {
+      href: url,
+      download: `vc-${vc.credentialSubject.name.toLowerCase().replace(/\s+/g, "-")}.json`
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const wallets = [
+    { role: "Governança", address: DEMO_ACCOUNTS.governance.address },
+    { role: `Emissor (${activeKeyIndex === 0 ? "#key-2026-1" : "#key-2027-1"})`, address: activeKey.address },
+    { role: "Relayer (paga gás)", address: DEMO_ACCOUNTS.relayer.address },
+    { role: "Recuperação", address: DEMO_ACCOUNTS.recovery.address }
+  ];
+
+  const activeDimensions = verifyResult
+    ? [
+        {
+          cls: verifyResult.dimensions.authenticity.valid ? "ok" : "err",
+          title: "1. Autenticidade",
+          chipCls: verifyResult.dimensions.authenticity.valid ? "ok" : "err",
+          chip: verifyResult.dimensions.authenticity.valid ? "Confirmada" : "Falhou",
+          body: verifyResult.dimensions.authenticity.summary,
+          meta: verifyResult.dimensions.authenticity.txHash ? `tx ${shortAddr(verifyResult.dimensions.authenticity.txHash)}` : ""
+        },
+        {
+          cls: verifyResult.dimensions.issuerLegitimacy.valid ? "ok" : "err",
+          title: "2. Emissor",
+          chipCls: verifyResult.dimensions.issuerLegitimacy.valid ? "ok" : "err",
+          chip: verifyResult.dimensions.issuerLegitimacy.status,
+          body: verifyResult.dimensions.issuerLegitimacy.summary,
+          meta: verifyResult.dimensions.issuerLegitimacy.issuerDid
+        },
+        {
+          cls: "info",
+          title: "3. Validade Acadêmica",
+          chipCls: "",
+          chip: "Declarada",
+          body: "Declarada pelo emissor. O reconhecimento acadêmico e legal fica fora da verificação técnica.",
+          meta: ""
+        },
+        {
+          cls: verifyResult.dimensions.revocation.valid ? "ok" : "err",
+          title: "4. Revogação e Prazo",
+          chipCls: verifyResult.dimensions.revocation.valid ? "ok" : "err",
+          chip: verifyResult.dimensions.revocation.revoked
+            ? "Revogada"
+            : verifyResult.dimensions.revocation.expired
+              ? "Expirada"
+              : "Em vigor",
+          body: verifyResult.dimensions.revocation.summary,
+          meta: ""
+        }
+      ]
+    : [];
 
   return (
     <div className="viewport-frame">
@@ -639,6 +503,7 @@ export default function App() {
           <path d="M10 45c7-4 14-6 22-6s15 2 22 6" />
         </svg>
       </div>
+
       <div className="app-shell">
         <header className="topbar">
           <div className="brand">
@@ -652,18 +517,11 @@ export default function App() {
 
           <nav className="nav-pills">
             <span className="nav-slider" style={{ transform: `translateX(${activeTabIndex * 100}%)` }} />
-            <button className={`nav-pill ${tab === "verify" ? "active" : ""}`} onClick={() => switchTab("verify")}>
-              Verificar
-            </button>
-            <button className={`nav-pill ${tab === "issuer" ? "active" : ""}`} onClick={() => switchTab("issuer")}>
-              Emitir
-            </button>
-            <button
-              className={`nav-pill ${tab === "governance" ? "active" : ""}`}
-              onClick={() => switchTab("governance")}
-            >
-              Governança
-            </button>
+            {TABS.map((t) => (
+              <button key={t.id} className={`nav-pill ${tab === t.id ? "active" : ""}`} onClick={() => switchTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
           </nav>
 
           <button className="net-btn" onClick={() => setShowNetwork((v) => !v)}>
@@ -683,38 +541,19 @@ export default function App() {
                 </div>
                 <div className="field" style={{ marginBottom: 0 }}>
                   <label>Contrato DiploChain</label>
-                  <input
-                    value={contractAddress}
-                    onChange={(e) => setContractAddress(e.target.value)}
-                    placeholder="0x..."
-                  />
+                  <input value={contractAddress} onChange={(e) => setContractAddress(e.target.value)} placeholder="0x..." />
                 </div>
                 <button className="dark" onClick={refreshChainState} disabled={busy || !contractAddress}>
                   Reconectar
                 </button>
               </div>
-
               <div className="wallet-grid">
-                <div className="wallet-item">
-                  <div className="wallet-role">Governança</div>
-                  <div className="mono">{shortAddr(DEMO_ACCOUNTS.governance.address)}</div>
-                </div>
-                <div className="wallet-item">
-                  <div className="wallet-role">
-                    Emissor ({activeKeyIndex === 0 ? "#key-2026-1" : "#key-2027-1"})
+                {wallets.map((w) => (
+                  <div className="wallet-item" key={w.role}>
+                    <div className="wallet-role">{w.role}</div>
+                    <div className="mono">{shortAddr(w.address)}</div>
                   </div>
-                  <div className="mono">
-                    {shortAddr(activeKeyIndex === 0 ? DEMO_ACCOUNTS.issuer1.address : DEMO_ACCOUNTS.issuer2.address)}
-                  </div>
-                </div>
-                <div className="wallet-item">
-                  <div className="wallet-role">Relayer (paga gás)</div>
-                  <div className="mono">{shortAddr(DEMO_ACCOUNTS.relayer.address)}</div>
-                </div>
-                <div className="wallet-item">
-                  <div className="wallet-role">Recuperação</div>
-                  <div className="mono">{shortAddr(DEMO_ACCOUNTS.recovery.address)}</div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
@@ -735,8 +574,7 @@ export default function App() {
               <section className="panel">
                 <h1 className="page-title">Verificar credencial</h1>
                 <p className="page-sub">
-                  Consulta pública na blockchain, sem conta ou login. Envie o arquivo .json da credencial ou abra o link
-                  do QR Code.
+                  Consulta pública na blockchain, sem conta ou login. Envie o arquivo .json da credencial ou abra o link do QR Code.
                 </p>
 
                 <div
@@ -749,23 +587,13 @@ export default function App() {
                   onDrop={(e) => {
                     e.preventDefault();
                     setDragging(false);
-                    const f = e.dataTransfer.files?.[0];
-                    if (f) loadJsonFile(f);
+                    if (e.dataTransfer.files?.[0]) loadJsonFile(e.dataTransfer.files[0]);
                   }}
                 >
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) loadJsonFile(f);
-                    }}
-                  />
+                  <input type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJsonFile(e.target.files[0])} />
                   <span className="dropzone-tag">Upload .json</span>
                   <div className="dropzone-title">Arraste o arquivo .json da credencial ou clique para selecionar</div>
-                  <div className="dropzone-sub">
-                    Os dados da credencial são validados no navegador, sem envio a servidores.
-                  </div>
+                  <div className="dropzone-sub">Os dados da credencial são validados no navegador, sem envio a servidores.</div>
                 </div>
 
                 <div className={`collapse-wrap ${showPaste ? "open" : ""}`}>
@@ -819,7 +647,7 @@ export default function App() {
                       <div>
                         <span className="verdict-badge">{verifyResult.verdict}</span>
                         <h3 className="verdict-name">
-                          {loadedVc ? loadedVc.credentialSubject.name : verdictPtLabel(verifyResult.verdict)}
+                          {loadedVc ? loadedVc.credentialSubject.name : VERDICT_LABELS[verifyResult.verdict] || verifyResult.verdict}
                         </h3>
                         {loadedVc && (
                           <div className="verdict-course">
@@ -828,103 +656,36 @@ export default function App() {
                         )}
                       </div>
                       <div className="verdict-meta">
-                        <div>{verdictPtLabel(verifyResult.verdict)}</div>
+                        <div>{VERDICT_LABELS[verifyResult.verdict] || verifyResult.verdict}</div>
                         <div className="mono">{verifyResult.verificationTimeMs} ms · read-only</div>
                         <div className="mono">leaf {shortAddr(verifyResult.leafHash)}</div>
                       </div>
                     </div>
 
                     <div className="dim-grid">
-                      <div className={`dim-card ${verifyResult.dimensions.authenticity.valid ? "ok" : "err"}`}>
-                        <div className="dim-head">
-                          <span className="dim-title">1. Autenticidade</span>
-                          <span className={`chip ${verifyResult.dimensions.authenticity.valid ? "ok" : "err"}`}>
-                            {verifyResult.dimensions.authenticity.valid ? "Confirmada" : "Falhou"}
-                          </span>
+                      {activeDimensions.map((d) => (
+                        <div key={d.title} className={`dim-card ${d.cls}`}>
+                          <div className="dim-head">
+                            <span className="dim-title">{d.title}</span>
+                            <span className={`chip ${d.chipCls}`}>{d.chip}</span>
+                          </div>
+                          <div className="dim-body">{d.body}</div>
+                          {d.meta && <div className="mono">{d.meta}</div>}
                         </div>
-                        <div className="dim-body">{verifyResult.dimensions.authenticity.summary}</div>
-                        {verifyResult.dimensions.authenticity.txHash && (
-                          <div className="mono">tx {shortAddr(verifyResult.dimensions.authenticity.txHash)}</div>
-                        )}
-                      </div>
-
-                      <div className={`dim-card ${verifyResult.dimensions.issuerLegitimacy.valid ? "ok" : "err"}`}>
-                        <div className="dim-head">
-                          <span className="dim-title">2. Emissor</span>
-                          <span className={`chip ${verifyResult.dimensions.issuerLegitimacy.valid ? "ok" : "err"}`}>
-                            {verifyResult.dimensions.issuerLegitimacy.status}
-                          </span>
-                        </div>
-                        <div className="dim-body">{verifyResult.dimensions.issuerLegitimacy.summary}</div>
-                        <div className="mono">{verifyResult.dimensions.issuerLegitimacy.issuerDid}</div>
-                      </div>
-
-                      <div className="dim-card info">
-                        <div className="dim-head">
-                          <span className="dim-title">3. Validade Acadêmica</span>
-                          <span className="chip">Declarada</span>
-                        </div>
-                        <div className="dim-body">
-                          Declarada pelo emissor. O reconhecimento acadêmico e legal fica fora da verificação técnica.
-                        </div>
-                      </div>
-
-                      <div className={`dim-card ${verifyResult.dimensions.revocation.valid ? "ok" : "err"}`}>
-                        <div className="dim-head">
-                          <span className="dim-title">4. Revogação e Prazo</span>
-                          <span className={`chip ${verifyResult.dimensions.revocation.valid ? "ok" : "err"}`}>
-                            {verifyResult.dimensions.revocation.revoked
-                              ? "Revogada"
-                              : verifyResult.dimensions.revocation.expired
-                                ? "Expirada"
-                                : "Em vigor"}
-                          </span>
-                        </div>
-                        <div className="dim-body">{verifyResult.dimensions.revocation.summary}</div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 ) : (
                   <div className="dim-grid">
-                    <div className="dim-card idle-1">
-                      <div className="dim-head">
-                        <span className="dim-title">1. Autenticidade</span>
-                        <span className="chip">Assinatura e Merkle</span>
+                    {IDLE_DIMENSIONS.map((d) => (
+                      <div key={d.title} className={`dim-card ${d.cls}`}>
+                        <div className="dim-head">
+                          <span className="dim-title">{d.title}</span>
+                          <span className="chip">{d.chip}</span>
+                        </div>
+                        <div className="dim-body">{d.body}</div>
                       </div>
-                      <div className="dim-body">
-                        Valida a assinatura ECDSA secp256k1, o hash com salt (JCS) e a prova de inclusão na raiz de
-                        Merkle ancorada.
-                      </div>
-                    </div>
-                    <div className="dim-card idle-2">
-                      <div className="dim-head">
-                        <span className="dim-title">2. Emissor</span>
-                        <span className="chip">Registro on-chain</span>
-                      </div>
-                      <div className="dim-body">
-                        Consulta no contrato o DID do emissor, o nível de garantia (L1 ou L2) e a janela de validade da
-                        chave.
-                      </div>
-                    </div>
-                    <div className="dim-card idle-3">
-                      <div className="dim-head">
-                        <span className="dim-title">3. Validade Acadêmica</span>
-                        <span className="chip">Fora da chain</span>
-                      </div>
-                      <div className="dim-body">
-                        Declarada pelo emissor na própria credencial. O reconhecimento acadêmico e legal fica fora da
-                        verificação técnica.
-                      </div>
-                    </div>
-                    <div className="dim-card idle-4">
-                      <div className="dim-head">
-                        <span className="dim-title">4. Revogação e Prazo</span>
-                        <span className="chip">Status on-chain</span>
-                      </div>
-                      <div className="dim-body">
-                        Confere o registro permanente de revogação no contrato, o código de motivo e o campo validUntil.
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 )}
               </section>
@@ -944,20 +705,11 @@ export default function App() {
                     </div>
                   </div>
                   <div className="segmented">
-                    <span
-                      className="segmented-slider"
-                      style={{ transform: `translateX(${issueMode === "single" ? 0 : 100}%)` }}
-                    />
-                    <button
-                      className={issueMode === "single" ? "active" : ""}
-                      onClick={() => setIssueMode("single")}
-                    >
+                    <span className="segmented-slider" style={{ transform: `translateX(${issueMode === "single" ? 0 : 100}%)` }} />
+                    <button className={issueMode === "single" ? "active" : ""} onClick={() => setIssueMode("single")}>
                       Individual
                     </button>
-                    <button
-                      className={issueMode === "batch" ? "active" : ""}
-                      onClick={() => setIssueMode("batch")}
-                    >
+                    <button className={issueMode === "batch" ? "active" : ""} onClick={() => setIssueMode("batch")}>
                       Lote
                     </button>
                   </div>
@@ -974,11 +726,7 @@ export default function App() {
                   </div>
                   <div className="field">
                     <label>Carga horária (h)</label>
-                    <input
-                      type="number"
-                      value={workloadHours}
-                      onChange={(e) => setWorkloadHours(Number(e.target.value))}
-                    />
+                    <input type="number" value={workloadHours} onChange={(e) => setWorkloadHours(Number(e.target.value))} />
                   </div>
                   {issueMode === "single" ? (
                     <div className="field">
@@ -988,39 +736,21 @@ export default function App() {
                   ) : (
                     <div className="field">
                       <label>Tamanho do lote (1 tx)</label>
-                      <input
-                        type="number"
-                        min={2}
-                        max={1000}
-                        value={batchCount}
-                        onChange={(e) => setBatchCount(Number(e.target.value))}
-                      />
+                      <input type="number" min={2} max={1000} value={batchCount} onChange={(e) => setBatchCount(Number(e.target.value))} />
                     </div>
                   )}
                 </div>
 
-                <button
-                  className="primary"
-                  style={{ marginTop: 6 }}
-                  onClick={() => issueCredentials(issueMode === "single" ? 1 : batchCount)}
-                  disabled={busy}
-                >
-                  {issueMode === "single"
-                    ? "Emitir e ancorar credencial"
-                    : `Ancorar lote de ${batchCount} credenciais`}
+                <button className="primary" style={{ marginTop: 6 }} onClick={() => issueCredentials(issueMode === "single" ? 1 : batchCount)} disabled={busy}>
+                  {issueMode === "single" ? "Emitir e ancorar credencial" : `Ancorar lote de ${batchCount} credenciais`}
                 </button>
 
                 <div className="section-foot" style={{ marginTop: "auto" }}>
                   <div className="row" style={{ justifyContent: "space-between" }}>
                     <span className="demo-label">
-                      Chave ativa:{" "}
-                      <span className="mono">{activeKeyIndex === 0 ? "#key-2026-1" : "#key-2027-1"}</span>
+                      Chave ativa: <span className="mono">{activeKeyIndex === 0 ? "#key-2026-1" : "#key-2027-1"}</span>
                     </span>
-                    <button
-                      className="ghost sm"
-                      onClick={rotateDemoIssuerKey}
-                      disabled={busy || activeKeyIndex === 1}
-                    >
+                    <button className="ghost sm" onClick={rotateDemoIssuerKey} disabled={busy || activeKeyIndex === 1}>
                       {activeKeyIndex === 1 ? "Rotacionada (#key-2027-1)" : "Rotacionar chave"}
                     </button>
                   </div>
@@ -1032,11 +762,7 @@ export default function App() {
                   <h2 className="panel-title">Credenciais emitidas ({issuedVcs.length})</h2>
                   <div className="row">
                     <span className="demo-label">Motivo ao revogar</span>
-                    <select
-                      value={revokeReason}
-                      onChange={(e) => setRevokeReason(Number(e.target.value))}
-                      style={{ padding: "5px 10px", fontSize: "0.8rem" }}
-                    >
+                    <select value={revokeReason} onChange={(e) => setRevokeReason(Number(e.target.value))} style={{ padding: "5px 10px", fontSize: "0.8rem" }}>
                       <option value={1}>AdminError</option>
                       <option value={2}>IssuerError</option>
                       <option value={3}>Fraud</option>
@@ -1047,8 +773,7 @@ export default function App() {
 
                 {issuedVcs.length === 0 ? (
                   <div className="empty-state">
-                    Nenhuma credencial emitida nesta sessão. Preencha o formulário ao lado para emitir uma credencial
-                    individual ou um lote.
+                    Nenhuma credencial emitida nesta sessão. Preencha o formulário ao lado para emitir uma credencial individual ou um lote.
                   </div>
                 ) : (
                   <div className="cred-list">
@@ -1112,8 +837,7 @@ export default function App() {
 
                 {issuers.length === 0 ? (
                   <div className="empty-state">
-                    Nenhum emissor encontrado. Abra “Configurar rede” no topo para informar o RPC e o endereço do
-                    contrato.
+                    Nenhum emissor encontrado. Abra “Configurar rede” no topo para informar o RPC e o endereço do contrato.
                   </div>
                 ) : (
                   issuers.map((iss) => (
@@ -1131,29 +855,17 @@ export default function App() {
 
                         <div className="row">
                           {iss.status === 1 && (
-                            <button
-                              className="warn sm"
-                              onClick={() => updateIssuerStatus(iss.issuerId, 2)}
-                              disabled={busy}
-                            >
+                            <button className="warn sm" onClick={() => updateIssuerStatus(iss.issuerId, 2)} disabled={busy}>
                               Suspender (N4)
                             </button>
                           )}
                           {iss.status === 2 && (
-                            <button
-                              className="primary sm"
-                              onClick={() => updateIssuerStatus(iss.issuerId, 1)}
-                              disabled={busy}
-                            >
+                            <button className="primary sm" onClick={() => updateIssuerStatus(iss.issuerId, 1)} disabled={busy}>
                               Reativar
                             </button>
                           )}
                           {iss.status !== 3 && (
-                            <button
-                              className="danger sm"
-                              onClick={() => updateIssuerStatus(iss.issuerId, 3)}
-                              disabled={busy}
-                            >
+                            <button className="danger sm" onClick={() => updateIssuerStatus(iss.issuerId, 3)} disabled={busy}>
                               Encerrar
                             </button>
                           )}
@@ -1176,15 +888,9 @@ export default function App() {
                               <td className="mono">{shortAddr(k.signer)}</td>
                               <td>{new Date(k.validFrom * 1000).toLocaleTimeString()}</td>
                               <td>{k.validUntil ? new Date(k.validUntil * 1000).toLocaleTimeString() : "Ativa"}</td>
-                              <td>
-                                {k.compromisedAt ? new Date(k.compromisedAt * 1000).toLocaleTimeString() : "Não"}
-                              </td>
+                              <td>{k.compromisedAt ? new Date(k.compromisedAt * 1000).toLocaleTimeString() : "Não"}</td>
                               <td style={{ textAlign: "right" }}>
-                                <button
-                                  className="danger sm"
-                                  disabled={busy || k.compromisedAt !== 0}
-                                  onClick={() => reportDemoCompromise(iss.issuerId, k.keyId)}
-                                >
+                                <button className="danger sm" disabled={busy || k.compromisedAt !== 0} onClick={() => reportDemoCompromise(iss.issuerId, k.keyId)}>
                                   {k.compromisedAt !== 0 ? "Comprometida" : "Reportar N5"}
                                 </button>
                               </td>
@@ -1215,19 +921,13 @@ export default function App() {
                   </select>
                 </div>
 
-                <button
-                  className="dark"
-                  style={{ marginTop: 6 }}
-                  onClick={registerNewIssuer}
-                  disabled={busy || !newIssuerDid.trim()}
-                >
+                <button className="dark" style={{ marginTop: 6 }} onClick={registerNewIssuer} disabled={busy || !newIssuerDid.trim()}>
                   Registrar emissor
                 </button>
 
                 <div className="role-note">
                   A conta de governança gerencia o registro de emissores. A conta de recuperação executa{" "}
-                  <span className="mono">reportCompromise</span> via EIP-712. O relayer envia as transações e paga o
-                  gás.
+                  <span className="mono">reportCompromise</span> via EIP-712. O relayer envia as transações e paga o gás.
                 </div>
               </section>
             </div>
