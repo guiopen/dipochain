@@ -149,15 +149,6 @@ body,
   color: var(--pink);
 }
 
-.brand-pill {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: var(--radius-pill);
-  border: var(--border);
-  background: var(--surface-muted);
-}
-
 .nav-pills {
   position: relative;
   display: grid;
@@ -607,7 +598,7 @@ button.nav-pill:active:not(:disabled),
 }
 
 button.nav-pill:not(.active):hover:not(:disabled)::before {
-  background: rgba(27, 27, 31, 0.08);
+  background: rgba(27, 27, 31, 0.2);
 }
 
 .row {
@@ -843,13 +834,18 @@ button.nav-pill:not(.active):hover:not(:disabled)::before {
   border-top: none;
 }
 
-.role-note {
-  margin-top: auto;
-  padding: 12px 14px;
-  border: var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  font-size: 0.82rem;
+.csv-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.csv-upload input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .modal-backdrop {

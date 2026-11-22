@@ -53,12 +53,12 @@ cd core && npm run verify -- <caminho-do-arquivo.json>
 
 ## Roteiro de demonstração
 
-1. Na tela **Emitir**, emita uma credencial individual (S1). Observe o gás registrado pelo relayer, abra o modal de QR Code e acesse o link de verificação para visualizar o resultado `VALID` nas quatro dimensões.
-2. Na mesma tela, alterne para **Lote** e ancore 100 ou 1.000 credenciais em uma única transação (S2), destacando o custo por credencial.
+1. Na tela **Emitir**, preencha os dados de um titular e emita uma credencial individual (S1). Observe o gás registrado pelo relayer, abra o modal de QR Code e acesse o link de verificação para visualizar o resultado `VALID` nas quatro dimensões.
+2. Na mesma tela, alterne para **Lote**, cole uma lista de titulares ou importe um arquivo `.csv` e clique em **Ancorar lote** para ancorar todas as credenciais em uma única transação (S2). Para métricas em escala (1, 100 e 1.000 credenciais), utilize o script `npm run benchmark` em `contracts/`.
 3. Baixe o arquivo `.json` de uma credencial emitida e execute o verificador CLI no terminal (S3).
-4. Na tela **Verificar**, com a credencial carregada, acione os botões **Adulterar (N1)** (`TAMPERED`), **Emissor falso (N2)** (`ISSUER NOT REGISTERED`) e **Sem âncora (N6)** (`ANCHOR NOT FOUND`).
+4. Na tela **Verificar**, abra **Colar JSON manualmente** com uma credencial carregada e edite o JSON para demonstrar os casos negativos: altere a carga horária para gerar `TAMPERED` (N1), altere o campo `issuer` para gerar `ISSUER NOT REGISTERED` (N2) e altere o `merkleRoot` para demonstrar falha de ancoragem (N6).
 5. Na tela **Emitir**, gere uma credencial com data de expiração no passado para validar o cenário **N7** (`EXPIRED`). Em seguida, revogue uma credencial válida para validar **S4** e **N3** (`REVOKED`).
-6. Na tela **Governança**, teste **Suspender (N4)** (`ISSUER SUSPENDED`), reative o emissor, reporte comprometimento de chave com janela retroativa entre duas emissões (**N5**, mantendo a primeira `VALID` e marcando a segunda como `UNDER REVIEW`) e encerre o emissor para confirmar `VALID - ISSUER CLOSED`.
+6. Na tela **Governança**, teste **Suspender** (`ISSUER SUSPENDED`, N4), reative o emissor, informe uma data/hora entre duas emissões em **Data/hora do comprometimento** e clique em **Reportar comprometimento** (N5, mantendo a primeira credencial `VALID` e marcando a segunda como `UNDER REVIEW`) e encerre o emissor para confirmar `VALID - ISSUER CLOSED`.
 7. Execute `npm run baseline` em `core/` para exibir o comparativo entre `did:web` e DiploChain nos cenários S3 offline e N5.
 
 ## Deploy opcional na testnet Base Sepolia

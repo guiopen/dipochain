@@ -23,9 +23,9 @@ O MVP executa o fluxo completo de emissão, ancoragem, revogação, ciclo de vid
 
 Aplicação SPA em React e TypeScript conectada diretamente ao RPC da blockchain, sem backend e sem banco de dados, organizada em três telas.
 
-- **Verificar** permite enviar um arquivo `.json`, colar o JSON ou abrir o link do QR Code para exibir o veredito e as quatro dimensões da verificação, além de oferecer atalhos para simular adulteração (N1), emissor não registrado (N2) e âncora inexistente (N6).
-- **Emitir** permite emitir credenciais individuais (S1 e N7) ou lotes via árvore de Merkle (S2) em uma transação, gerar o cartão com QR Code, baixar o `.json`, revogar credenciais (S4 e N3) e rotacionar a chave do emissor.
-- **Governança** exibe os emissores e o histórico de chaves registrados no contrato, permite registrar novos emissores, suspender (N4), reativar, encerrar (`Closed`) e reportar comprometimento de chave com janela configurável (N5).
+- **Verificar** permite enviar um arquivo `.json`, colar o JSON ou abrir o link do QR Code para exibir o veredito e as quatro dimensões da verificação.
+- **Emitir** permite emitir credenciais individuais (S1 e N7) ou lotes a partir de lista de titulares e importação de `.csv` via árvore de Merkle (S2) em uma transação, gerar o cartão com QR Code, baixar o `.json`, revogar credenciais (S4 e N3) e rotacionar a chave do emissor.
+- **Governança** exibe os emissores e o histórico de chaves registrados no contrato, permite registrar novos emissores, suspender (N4), reativar, encerrar (`Closed`) e reportar comprometimento de chave informando a data e hora estimadas (N5).
 
 ## 2. Comparativo entre MVP da disciplina e produto final
 
@@ -37,7 +37,7 @@ Aplicação SPA em React e TypeScript conectada diretamente ao RPC da blockchain
 | Onboarding de emissores | Registro direto pela tela de Governança | Validação jurídica (CNPJ e representante legal), prova de domínio via DNS TXT e consulta ao e-MEC |
 | Custódia de chaves | Contas de demonstração locais embutidas no cliente | HSM gerenciado com controle de acesso por papéis ou custódia multi-parte (MPC) |
 | Relayer e cobrança | Conta de relayer operada no cliente submetendo assinaturas EIP-712 | Serviço backend dedicado de relayer e tesouraria operacional financiada por taxas em BRL |
-| Fluxo de emissão | Emissão direta em um clique (individual ou lote gerado) | Aprovação em duas etapas, limites diários de emissão e integração com ERPs acadêmicos |
+| Fluxo de emissão | Emissão individual ou em lote (lista de titulares e importação `.csv`) | Aprovação em duas etapas, limites diários de emissão e integração com ERPs acadêmicos |
 | Entrega ao titular | Download do arquivo `.json` e cartão na tela com QR Code | Geração de PDF com QR Code, backup criptografado opcional e compartilhamento no LinkedIn |
 | Encerramento do emissor | Status `Closed` preservando credenciais ancoradas antes do fechamento | Transferência do direito de revogação para um custodiante designado no contrato |
 | Extensões opcionais | Fora do escopo do MVP | Soulbound Token (ERC-5192), desafio criptográfico de posse do titular e API de verificação para RH/ATS |

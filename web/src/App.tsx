@@ -97,6 +97,28 @@ const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(er
 const verdictTone = (v: string): "ok" | "warn" | "err" =>
   v === "VALID" ? "ok" : v === "VALID - ISSUER CLOSED" || v.includes("UNDER REVIEW") ? "warn" : "err";
 
+function toLocalDateTimeValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function parseBatchEntries(text: string, fallbackCourse: string, fallbackHours: number) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, idx) => !(idx === 0 && /^(nome|name|titular)\b/i.test(line)))
+    .map((line) => {
+      const parts = line.split(/[;,]/).map((p) => p.trim());
+      return {
+        name: parts[0] || "",
+        course: parts[1] || fallbackCourse.trim(),
+        workloadHours: Number(parts[2]) || fallbackHours
+      };
+    })
+    .filter((entry) => entry.name && entry.course && entry.workloadHours > 0);
+}
+
 export default function App() {
   const [tab, setTab] = useState<TabId>("verify");
   const [slideDir, setSlideDir] = useState<"left" | "right">("right");
@@ -116,11 +138,11 @@ export default function App() {
   const [verifyResult, setVerifyResult] = useState<VerificationResult | null>(null);
   const [loadedVc, setLoadedVc] = useState<VerifiableCredential | null>(null);
 
-  const [holderName, setHolderName] = useState("Maria Silva");
-  const [courseName, setCourseName] = useState("Arquitetura Blockchain e Smart Contracts");
-  const [workloadHours, setWorkloadHours] = useState(60);
+  const [holderName, setHolderName] = useState("");
+  const [courseName, setCourseName] = useState("");
+  const [workloadHours, setWorkloadHours] = useState("");
   const [validUntil, setValidUntil] = useState("");
-  const [batchCount, setBatchCount] = useState(100);
+  const [batchInput, setBatchInput] = useState("");
   const [issuedVcs, setIssuedVcs] = useState<VerifiableCredential[]>([]);
   const [revokeReason, setRevokeReason] = useState(2);
   const [activeKeyIndex, setActiveKeyIndex] = useState<0 | 1>(0);
@@ -129,13 +151,14 @@ export default function App() {
   );
 
   const [issuers, setIssuers] = useState<OnChainIssuerInfo[]>([]);
-  const [newIssuerDid, setNewIssuerDid] = useState("did:web:cursos.exemplo.br");
+  const [newIssuerDid, setNewIssuerDid] = useState("");
   const [newIssuerLevel, setNewIssuerLevel] = useState(1);
-  const [compromiseSecondsAgo, setCompromiseSecondsAgo] = useState(30);
+  const [compromiseAt, setCompromiseAt] = useState(() => toLocalDateTimeValue(new Date()));
 
   const activeTabIndex = TABS.findIndex((t) => t.id === tab);
   const activeKey = activeKeyIndex === 0 ? DEMO_ACCOUNTS.issuer1 : DEMO_ACCOUNTS.issuer2;
   const activeKeyMethod = activeKeyIndex === 0 ? DEMO_KEY_METHOD_1 : DEMO_KEY_METHOD_2;
+  const parsedBatch = parseBatchEntries(batchInput, courseName, Number(workloadHours));
 
   function switchTab(next: TabId) {
     if (next === tab) return;
@@ -256,53 +279,23 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  function testModifiedVc(vc: VerifiableCredential) {
-    setVcText(JSON.stringify(vc, null, 2));
-    runVerification(vc);
+  function loadCsvFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => setBatchInput(String(reader.result || ""));
+    reader.readAsText(file);
   }
 
-  const simulateTamperN1 = () =>
-    loadedVc &&
-    testModifiedVc({
-      ...loadedVc,
-      credentialSubject: { ...loadedVc.credentialSubject, workloadHours: loadedVc.credentialSubject.workloadHours + 500 }
-    });
-
-  const simulateUnanchoredN6 = () =>
-    loadedVc &&
-    testModifiedVc({
-      ...loadedVc,
-      anchorReference: {
-        ...loadedVc.anchorReference,
-        merkleRoot: ethers.keccak256(ethers.toUtf8Bytes("non-existent-root-" + Date.now())),
-        txHash: ethers.ZeroHash
-      }
-    });
-
-  const simulateUnregisteredN2 = () =>
-    runAction("Não foi possível verificar", async () => {
-      const rogue = ethers.Wallet.createRandom();
-      const core: VcCore = {
-        "@context": ["https://www.w3.org/ns/credentials/v2"],
-        id: `urn:uuid:rogue-${Date.now()}`,
-        type: ["VerifiableCredential", "AcademicCertificate"],
-        issuer: "did:web:falsa-instituicao.edu",
-        validFrom: new Date().toISOString(),
-        credentialSubject: { id: "urn:diplochain:holder:rogue", name: "Aluno Teste", course: "Curso Não Credenciado", workloadHours: 100 },
-        salt: generateSalt()
-      };
-      const fakeVc: VerifiableCredential = {
-        ...core,
-        proof: { type: "EcdsaSecp256k1Signature2019", verificationMethod: "did:web:falsa-instituicao.edu#key-1", proofPurpose: "assertionMethod", proofValue: await signVcCore(core, rogue) },
-        anchorReference: { chainId, anchorRegistry: contractAddress, merkleRoot: computeLeafHash(core), merkleProof: [], txHash: ethers.ZeroHash }
-      };
-      setVcText(JSON.stringify(fakeVc, null, 2));
-      setLoadedVc(fakeVc);
-      setVerifyResult(await verifyCredentialOnChain(fakeVc, rpcUrl, contractAddress || undefined));
-    });
-
-  function issueCredentials(count: number) {
+  function issueCredentials() {
     if (!contractAddress) return setStatusMsg({ tone: "err", text: "Contrato não configurado. Abra o painel de rede no topo." });
+    const entries =
+      issueMode === "single"
+        ? [{ name: holderName.trim(), course: courseName.trim(), workloadHours: Number(workloadHours) }]
+        : parsedBatch;
+
+    if (entries.length === 0 || !entries[0].name || !entries[0].course || entries[0].workloadHours <= 0) {
+      return setStatusMsg({ tone: "err", text: "Preencha os campos obrigatórios antes de emitir." });
+    }
+
     runAction("Erro ao emitir", async () => {
       const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
       const issuerWallet = new ethers.Wallet(activeKey.privateKey, provider);
@@ -312,7 +305,7 @@ export default function App() {
 
       const started = performance.now();
       const nowIso = new Date().toISOString();
-      const cores: VcCore[] = Array.from({ length: count }, (_, i) => ({
+      const cores: VcCore[] = entries.map((entry, i) => ({
         "@context": ["https://www.w3.org/ns/credentials/v2"],
         id: `urn:uuid:${Date.now()}-${i}`,
         type: ["VerifiableCredential", "AcademicCertificate"],
@@ -321,21 +314,21 @@ export default function App() {
         ...(validUntil ? { validUntil: new Date(validUntil).toISOString() } : {}),
         credentialSubject: {
           id: `urn:diplochain:holder:${Date.now()}-${i}`,
-          name: count === 1 ? holderName : `${holderName} #${i + 1}`,
-          course: courseName,
-          workloadHours: Number(workloadHours)
+          name: entry.name,
+          course: entry.course,
+          workloadHours: entry.workloadHours
         },
         salt: generateSalt()
       }));
 
       const { root, proofs } = buildMerkleTree(cores.map(computeLeafHash));
       const nonce: bigint = await contract.nonces(issuerId);
-      const sig = await signAnchorTypedData(contractAddress, activeChainId, issuerWallet, issuerId, root, count, schemaId, keyId, nonce);
-      const tx = await contract.anchor(issuerId, root, count, schemaId, keyId, nonce, sig);
+      const sig = await signAnchorTypedData(contractAddress, activeChainId, issuerWallet, issuerId, root, entries.length, schemaId, keyId, nonce);
+      const tx = await contract.anchor(issuerId, root, entries.length, schemaId, keyId, nonce, sig);
       const receipt = await tx.wait();
 
       const newVcs: VerifiableCredential[] = await Promise.all(
-        cores.slice(0, Math.min(count, 10)).map(async (core, i) => ({
+        cores.slice(0, Math.min(entries.length, 20)).map(async (core, i) => ({
           ...core,
           proof: { type: "EcdsaSecp256k1Signature2019", verificationMethod: activeKeyMethod, proofPurpose: "assertionMethod", proofValue: await signVcCore(core, issuerWallet) },
           anchorReference: { chainId: activeChainId, anchorRegistry: contractAddress, merkleRoot: root, merkleProof: proofs[i], txHash: tx.hash }
@@ -346,7 +339,7 @@ export default function App() {
       setIssuedVcs((prev) => [...newVcs, ...prev]);
       setStatusMsg({
         tone: "ok",
-        text: `${count} credencial(is) ancoradas em 1 transação · ${gasUsed.toLocaleString()} gás (${(gasUsed / count).toFixed(1)} gás/cred) · ${(performance.now() - started).toFixed(0)} ms`
+        text: `${entries.length} credencial(is) ancoradas em 1 transação · ${gasUsed.toLocaleString()} gás (${(gasUsed / entries.length).toFixed(1)} gás/cred) · ${(performance.now() - started).toFixed(0)} ms`
       });
     });
   }
@@ -364,7 +357,7 @@ export default function App() {
       setStatusMsg({ tone: "warn", text: `Credencial de ${vc.credentialSubject.name} revogada (${REVOCATION_REASON_LABELS[revokeReason]}).` });
     });
 
-  const rotateDemoIssuerKey = () =>
+  const rotateIssuerKey = () =>
     runAction("Erro ao rotacionar chave", async () => {
       const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
       const oldWallet = new ethers.Wallet(DEMO_ACCOUNTS.issuer1.privateKey, provider);
@@ -389,20 +382,24 @@ export default function App() {
 
   const registerNewIssuer = () =>
     runAction("Erro ao registrar", async () => {
+      const did = newIssuerDid.trim();
       const { contract } = await connectChain(DEMO_ACCOUNTS.governance.privateKey);
-      const keyId = computeKeyId(`${newIssuerDid}#key-1`);
+      const keyId = computeKeyId(`${did}#key-1`);
       await (
-        await contract.registerIssuer(newIssuerDid, newIssuerLevel, DEMO_ACCOUNTS.recovery.address, keyId, ethers.Wallet.createRandom().address)
+        await contract.registerIssuer(did, newIssuerLevel, DEMO_ACCOUNTS.recovery.address, keyId, ethers.Wallet.createRandom().address)
       ).wait();
+      setNewIssuerDid("");
       await refreshChainState();
-      setStatusMsg({ tone: "ok", text: `Emissor ${newIssuerDid} registrado.` });
+      setStatusMsg({ tone: "ok", text: `Emissor ${did} registrado.` });
     });
 
-  const reportDemoCompromise = (issuerId: string, keyId: string) =>
+  const reportCompromise = (issuerId: string, keyId: string) =>
     runAction("Erro ao reportar comprometimento", async () => {
       const { provider, activeChainId, contract } = await connectChain(DEMO_ACCOUNTS.relayer.privateKey);
       const block = await provider.getBlock("latest");
-      const estimatedTime = Math.max(1, (block ? Number(block.timestamp) : Math.floor(Date.now() / 1000)) - Number(compromiseSecondsAgo));
+      const nowBlockTs = block ? Number(block.timestamp) : Math.floor(Date.now() / 1000);
+      const selectedTs = compromiseAt ? Math.floor(new Date(compromiseAt).getTime() / 1000) : nowBlockTs;
+      const estimatedTime = Math.max(1, Math.min(selectedTs, nowBlockTs));
       const recoveryWallet = new ethers.Wallet(DEMO_ACCOUNTS.recovery.privateKey, provider);
       const nonce: bigint = await contract.nonces(issuerId);
       const sig = await signCompromiseTypedData(contractAddress, activeChainId, recoveryWallet, issuerId, keyId, estimatedTime, nonce);
@@ -410,7 +407,7 @@ export default function App() {
       await refreshChainState();
       setStatusMsg({
         tone: "warn",
-        text: `Comprometimento registrado (${new Date(estimatedTime * 1000).toLocaleTimeString()}). Credenciais anteriores seguem válidas; posteriores ficam sob revisão.`
+        text: `Comprometimento registrado (${new Date(estimatedTime * 1000).toLocaleString()}). Credenciais anteriores seguem válidas e posteriores ficam sob revisão.`
       });
     });
 
@@ -432,7 +429,7 @@ export default function App() {
   const wallets = [
     { role: "Governança", address: DEMO_ACCOUNTS.governance.address },
     { role: `Emissor (${activeKeyIndex === 0 ? "#key-2026-1" : "#key-2027-1"})`, address: activeKey.address },
-    { role: "Relayer (paga gás)", address: DEMO_ACCOUNTS.relayer.address },
+    { role: "Relayer (gás)", address: DEMO_ACCOUNTS.relayer.address },
     { role: "Recuperação", address: DEMO_ACCOUNTS.recovery.address }
   ];
 
@@ -477,6 +474,11 @@ export default function App() {
       ]
     : [];
 
+  const canIssue =
+    issueMode === "single"
+      ? Boolean(holderName.trim() && courseName.trim() && Number(workloadHours) > 0)
+      : parsedBatch.length > 0;
+
   return (
     <div className="viewport-frame">
       <div className="bg-decor" aria-hidden="true">
@@ -512,7 +514,6 @@ export default function App() {
               DiploChain
               <span className="brace brace-pink">{"}"}</span>
             </span>
-            <span className="brand-pill">UFSC · PD3</span>
           </div>
 
           <nav className="nav-pills">
@@ -615,21 +616,9 @@ export default function App() {
                 </div>
 
                 <div className="section-foot">
-                  <div className="row" style={{ justifyContent: "space-between" }}>
+                  <div className="row">
                     <button className="ghost sm" onClick={() => setShowPaste((v) => !v)}>
                       {showPaste ? "Ocultar editor JSON" : "Colar JSON manualmente"}
-                    </button>
-                    <span className="demo-label">Cenários negativos (PD3)</span>
-                  </div>
-                  <div className="row">
-                    <button className="ghost sm" onClick={simulateTamperN1} disabled={busy || !loadedVc}>
-                      Adulterar (N1)
-                    </button>
-                    <button className="ghost sm" onClick={simulateUnregisteredN2} disabled={busy || !contractAddress}>
-                      Emissor falso (N2)
-                    </button>
-                    <button className="ghost sm" onClick={simulateUnanchoredN6} disabled={busy || !loadedVc}>
-                      Sem âncora (N6)
                     </button>
                   </div>
                 </div>
@@ -716,33 +705,55 @@ export default function App() {
                 </div>
 
                 <div className="form-grid">
+                  {issueMode === "single" && (
+                    <div className="field span-2">
+                      <label>Nome do titular</label>
+                      <input value={holderName} onChange={(e) => setHolderName(e.target.value)} placeholder="Ex: Maria Silva" />
+                    </div>
+                  )}
                   <div className="field span-2">
-                    <label>{issueMode === "single" ? "Nome do titular" : "Prefixo dos titulares"}</label>
-                    <input value={holderName} onChange={(e) => setHolderName(e.target.value)} />
-                  </div>
-                  <div className="field span-2">
-                    <label>Curso</label>
-                    <input value={courseName} onChange={(e) => setCourseName(e.target.value)} />
+                    <label>{issueMode === "single" ? "Curso" : "Curso padrão (caso o CSV informe apenas nomes)"}</label>
+                    <input
+                      value={courseName}
+                      onChange={(e) => setCourseName(e.target.value)}
+                      placeholder="Ex: Arquitetura Blockchain e Smart Contracts"
+                    />
                   </div>
                   <div className="field">
                     <label>Carga horária (h)</label>
-                    <input type="number" value={workloadHours} onChange={(e) => setWorkloadHours(Number(e.target.value))} />
+                    <input type="number" value={workloadHours} onChange={(e) => setWorkloadHours(e.target.value)} placeholder="60" />
                   </div>
-                  {issueMode === "single" ? (
-                    <div className="field">
-                      <label>Expiração opcional (N7)</label>
-                      <input type="datetime-local" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
-                    </div>
-                  ) : (
-                    <div className="field">
-                      <label>Tamanho do lote (1 tx)</label>
-                      <input type="number" min={2} max={1000} value={batchCount} onChange={(e) => setBatchCount(Number(e.target.value))} />
+                  <div className="field">
+                    <label>Data de expiração (opcional)</label>
+                    <input type="datetime-local" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+                  </div>
+                  {issueMode === "batch" && (
+                    <div className="field span-2">
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <label>Titulares (um por linha ou CSV: nome,curso,carga_horaria)</label>
+                        <label className="csv-upload">
+                          <span className="chip" style={{ cursor: "pointer" }}>
+                            Importar .csv
+                          </span>
+                          <input type="file" accept=".csv,.txt" onChange={(e) => e.target.files?.[0] && loadCsvFile(e.target.files[0])} />
+                        </label>
+                      </div>
+                      <textarea
+                        rows={4}
+                        value={batchInput}
+                        onChange={(e) => setBatchInput(e.target.value)}
+                        placeholder={"Maria Silva\nJoão Santos\nAna Costa"}
+                      />
                     </div>
                   )}
                 </div>
 
-                <button className="primary" style={{ marginTop: 6 }} onClick={() => issueCredentials(issueMode === "single" ? 1 : batchCount)} disabled={busy}>
-                  {issueMode === "single" ? "Emitir e ancorar credencial" : `Ancorar lote de ${batchCount} credenciais`}
+                <button className="primary" style={{ marginTop: 6 }} onClick={issueCredentials} disabled={busy || !canIssue}>
+                  {issueMode === "single"
+                    ? "Emitir e ancorar credencial"
+                    : parsedBatch.length > 0
+                      ? `Ancorar lote (${parsedBatch.length} credenciais)`
+                      : "Ancorar lote"}
                 </button>
 
                 <div className="section-foot" style={{ marginTop: "auto" }}>
@@ -750,7 +761,7 @@ export default function App() {
                     <span className="demo-label">
                       Chave ativa: <span className="mono">{activeKeyIndex === 0 ? "#key-2026-1" : "#key-2027-1"}</span>
                     </span>
-                    <button className="ghost sm" onClick={rotateDemoIssuerKey} disabled={busy || activeKeyIndex === 1}>
+                    <button className="ghost sm" onClick={rotateIssuerKey} disabled={busy || activeKeyIndex === 1}>
                       {activeKeyIndex === 1 ? "Rotacionada (#key-2027-1)" : "Rotacionar chave"}
                     </button>
                   </div>
@@ -823,14 +834,13 @@ export default function App() {
                 <div className="panel-header">
                   <h1 className="page-title">Emissores registrados ({issuers.length})</h1>
                   <div className="row">
-                    <span className="demo-label">Janela N5 (s atrás)</span>
+                    <span className="demo-label">Data/hora do comprometimento</span>
                     <input
-                      type="number"
-                      min={0}
-                      max={3600}
-                      style={{ width: 76, padding: "5px 10px", fontSize: "0.8rem" }}
-                      value={compromiseSecondsAgo}
-                      onChange={(e) => setCompromiseSecondsAgo(Number(e.target.value))}
+                      type="datetime-local"
+                      step="1"
+                      style={{ padding: "5px 10px", fontSize: "0.8rem" }}
+                      value={compromiseAt}
+                      onChange={(e) => setCompromiseAt(e.target.value)}
                     />
                   </div>
                 </div>
@@ -856,7 +866,7 @@ export default function App() {
                         <div className="row">
                           {iss.status === 1 && (
                             <button className="warn sm" onClick={() => updateIssuerStatus(iss.issuerId, 2)} disabled={busy}>
-                              Suspender (N4)
+                              Suspender
                             </button>
                           )}
                           {iss.status === 2 && (
@@ -890,8 +900,8 @@ export default function App() {
                               <td>{k.validUntil ? new Date(k.validUntil * 1000).toLocaleTimeString() : "Ativa"}</td>
                               <td>{k.compromisedAt ? new Date(k.compromisedAt * 1000).toLocaleTimeString() : "Não"}</td>
                               <td style={{ textAlign: "right" }}>
-                                <button className="danger sm" disabled={busy || k.compromisedAt !== 0} onClick={() => reportDemoCompromise(iss.issuerId, k.keyId)}>
-                                  {k.compromisedAt !== 0 ? "Comprometida" : "Reportar N5"}
+                                <button className="danger sm" disabled={busy || k.compromisedAt !== 0} onClick={() => reportCompromise(iss.issuerId, k.keyId)}>
+                                  {k.compromisedAt !== 0 ? "Comprometida" : "Reportar comprometimento"}
                                 </button>
                               </td>
                             </tr>
@@ -906,12 +916,16 @@ export default function App() {
               <section className="panel panel-amber">
                 <h2 className="panel-title">Registrar emissor</h2>
                 <p className="page-sub">
-                  A conta de governança registra novos emissores e altera o status de emissores existentes no contrato.
+                  Adicione um novo emissor ao registro on-chain com nível de garantia L1 ou L2.
                 </p>
 
                 <div className="field">
                   <label>DID do emissor</label>
-                  <input value={newIssuerDid} onChange={(e) => setNewIssuerDid(e.target.value)} />
+                  <input
+                    value={newIssuerDid}
+                    onChange={(e) => setNewIssuerDid(e.target.value)}
+                    placeholder="Ex: did:web:instituicao.edu.br"
+                  />
                 </div>
                 <div className="field">
                   <label>Nível de garantia</label>
@@ -924,11 +938,6 @@ export default function App() {
                 <button className="dark" style={{ marginTop: 6 }} onClick={registerNewIssuer} disabled={busy || !newIssuerDid.trim()}>
                   Registrar emissor
                 </button>
-
-                <div className="role-note">
-                  A conta de governança gerencia o registro de emissores. A conta de recuperação executa{" "}
-                  <span className="mono">reportCompromise</span> via EIP-712. O relayer envia as transações e paga o gás.
-                </div>
               </section>
             </div>
           </main>
