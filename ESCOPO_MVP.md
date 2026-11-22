@@ -1,47 +1,44 @@
-# Escopo do MVP da Disciplina (PD3) vs. Produto Final
+# Escopo do MVP da Disciplina (PD3) e Diferenças para o Produto Final
 
-Este documento delimita claramente o que o **MVP didático do DiploChain (PD3)** implementa de fato para a apresentação da disciplina e o que pertence apenas à visão de **Produto Final** descrita nos *White Papers* e no *Business Model Canvas*.
+Este documento delimita o que o MVP do DiploChain (PD3) implementa para a apresentação na disciplina e o que pertence apenas à proposta de produto final descrita nos white papers e no Business Model Canvas. Os ajustes técnicos de especificação estão registrados em [AJUSTES_WHITEPAPER.md](./AJUSTES_WHITEPAPER.md).
 
----
+## 1. Funcionalidades implementadas no MVP
 
-## 1. O que o MVP da disciplina faz de fato
+O MVP executa o fluxo completo de emissão, ancoragem, revogação, ciclo de vida de chaves e verificação usando criptografia real e um contrato inteligente em rede EVM (rede local Hardhat e deploy opcional em testnet pública Base Sepolia). Ele cobre os 11 cenários definidos na Seção 12 do *Technical White Paper* (S1 a S4 e N1 a N7).
 
-O MVP entrega um fluxo completo ponta a ponta usando criptografia e smart contracts reais em uma rede EVM (local via Hardhat e opcionalmente em testnet pública Base Sepolia), cobrindo todos os cenários de avaliação da Seção 12 do *Technical White Paper*:
+### 1.1. Contrato inteligente (`DiploChain.sol`)
 
-### 1.1. Contrato Inteligente (`DiploChain.sol`)
-- **Registro de Emissores:** cadastrar instituições (`issuerId`, DID, nível de garantia `L1`/`L2`, endereço de recuperação e chave pública inicial), suspender/reativar (`Suspended`) e encerrar instituição (`Closed`).
-- **Histórico de Chaves:** registrar janelas temporais (`validFrom`, `validUntil`, `compromisedAt`) por chave, suportando rotação de chave e reporte de comprometimento com timestamp retroativo (`reportCompromise`).
-- **Ancoragem em Lote (EIP-712):** registrar a raiz de Merkle (`merkleRoot`), quantidade de credenciais, `schemaId` e timestamp do bloco mediante validação real de assinatura EIP-712 da chave ativa do emissor, permitindo que outra conta (Relayer) pague o gás.
-- **Revogação On-Chain (EIP-712):** revogar permanentemente uma credencial (`(issuerId, leafHash)`) com código de motivo (`AdminError`, `IssuerError`, `Fraud`, `Superseded`), validando assinatura EIP-712 do emissor original.
+- Registro de emissores com `issuerId`, DID, nível de garantia (`L1` ou `L2`), endereço de recuperação e chave inicial, além de transição de status para `Active`, `Suspended` e `Closed`.
+- Histórico de chaves por emissor com janelas temporais (`validFrom`, `validUntil` e `compromisedAt`), suportando rotação de chave (`rotateKey`) e reporte retroativo de comprometimento (`reportCompromise`).
+- Ancoragem de raízes de Merkle (`anchor`) e revogação permanente por `(issuerId, leafHash)` com código de motivo (`AdminError`, `IssuerError`, `Fraud` ou `Superseded`), ambas validadas por assinatura EIP-712 com proteção de `nonce` para envio via relayer.
 
-### 1.2. Motor Criptográfico e CLI Independente (`core/`)
-- Construção de credenciais no formato W3C VC 2.0 com `salt` aleatório de 128 bits, canonicalização RFC 8785 (JCS), cálculo de `leafHash` e assinatura ECDSA secp256k1.
-- Construção e verificação de árvore de Merkle com pares ordenados (1 credencial ou lotes de 100 e 1.000 credenciais em 1 única transação).
-- Verificação completa em 6 passos lendo apenas a blockchain (sem depender de servidores do emissor ou do DiploChain), retornando as **4 dimensões separadas** (Autenticidade, Legitimidade do Emissor, Validade Acadêmica como *"afirmada pelo emissor"* e Revogação/Status) e todos os vereditos explícitos: `VALID`, `VALID - ISSUER CLOSED`, `REVOKED`, `ISSUER SUSPENDED`, `ISSUED AFTER KEY COMPROMISE - UNDER REVIEW`, `INVALID SIGNATURE`, `TAMPERED`, `ISSUER NOT REGISTERED`, `ANCHOR NOT FOUND / UNCONFIRMED` e `EXPIRED`.
-- **CLI de terminal** para demonstrar verificação 100% independente do portal web (cenário **S3**).
-- **Simulador de baseline `did:web`** (mini servidor HTTP local) para comparar ao vivo os cenários em que `did:web` falha (emissor offline e comprometimento de chave).
-- **Benchmark automatizado** medindo consumo de gás e tempo para lotes de 1, 100 e 1.000 credenciais (cenário **S2**).
+### 1.2. Biblioteca criptográfica, CLI e scripts de avaliação (`core/` e `contracts/`)
 
-### 1.3. Interface Gráfica Web (`web/`)
-Aplicação web local (SPA) conectada diretamente ao RPC da blockchain, sem backend e sem banco de dados, organizada em 3 abas:
-1. **Verificador Público:** recebe a credencial por arquivo `.json`, colagem de texto ou link/QR Code; exibe as 4 dimensões, o veredito final e os dados da transação on-chain; inclui atalhos para demonstrar casos negativos (como adulteração de campo).
-2. **Portal do Emissor:** emite credencial única ou lote de N credenciais em 1 transação (exibindo o gás gasto), gera cartão visual com QR Code e download do `.json`, permite revogar credenciais escolhendo o motivo e rotacionar a chave institucional.
-3. **Governança e Ciclo de Vida:** registra novas instituições, suspende/reativa ou encerra emissores e dispara reporte de comprometimento de chave com timestamp ajustável para demonstrar o cenário **N5** ao vivo.
+- Geração de credenciais no formato W3C VC 2.0 com `salt` aleatório de 128 bits, canonicalização RFC 8785 (JCS), cálculo de `leafHash`, assinatura ECDSA secp256k1 e árvore de Merkle com pares ordenados.
+- Motor de verificação somente-leitura que consulta diretamente o RPC da blockchain e retorna as quatro dimensões (autenticidade, legitimidade do emissor, validade acadêmica declarada pelo emissor e revogação/prazo) junto ao veredito (`VALID`, `VALID - ISSUER CLOSED`, `REVOKED`, `ISSUER SUSPENDED`, `ISSUED AFTER KEY COMPROMISE - UNDER REVIEW`, `INVALID SIGNATURE`, `TAMPERED`, `ISSUER NOT REGISTERED`, `ANCHOR NOT FOUND` e `EXPIRED`).
+- CLI independente para verificar arquivos `.json` direto pelo terminal sem o portal web (cenário S3).
+- Benchmark automatizado de gás e tempo para lotes de 1, 100 e 1.000 credenciais (cenário S2) e script comparativo contra um baseline `did:web` local (cenários S3 offline e N5).
 
----
+### 1.3. Interface web (`web/`)
 
-## 2. Comparativo: MVP da Disciplina vs. Produto Final
+Aplicação SPA em React e TypeScript conectada diretamente ao RPC da blockchain, sem backend e sem banco de dados, organizada em três telas.
 
-| Aspecto | MVP da Disciplina (PD3) | Produto Final (Visão dos White Papers / BMC) |
+- **Verificar** permite enviar um arquivo `.json`, colar o JSON ou abrir o link do QR Code para exibir o veredito e as quatro dimensões da verificação, além de oferecer atalhos para simular adulteração (N1), emissor não registrado (N2) e âncora inexistente (N6).
+- **Emitir** permite emitir credenciais individuais (S1 e N7) ou lotes via árvore de Merkle (S2) em uma transação, gerar o cartão com QR Code, baixar o `.json`, revogar credenciais (S4 e N3) e rotacionar a chave do emissor.
+- **Governança** exibe os emissores e o histórico de chaves registrados no contrato, permite registrar novos emissores, suspender (N4), reativar, encerrar (`Closed`) e reportar comprometimento de chave com janela configurável (N5).
+
+## 2. Comparativo entre MVP da disciplina e produto final
+
+| Componente | MVP da disciplina (PD3) | Produto final (White Papers e BMC) |
 | :--- | :--- | :--- |
-| **Arquitetura de Contratos** | 1 contrato unificado (`DiploChain.sol`) com os 3 registros lógicos internos | 3 contratos separados, auditados externamente e atualizáveis com time-lock |
-| **Rede Blockchain** | Rede EVM local (Hardhat) + deploy opcional em testnet pública (Base Sepolia) | Mainnet de uma L2 pública (Base, Polygon ou Arbitrum) com cross-anchoring periódico na Ethereum L1 |
-| **Governança do Registro** | 1 conta de governança (admin) e 1 conta de recuperação por emissor | Multi-sig 3-of-5 (Fase 1) evoluindo para consórcio de instituições (Fase 2), com time-lock de 7 dias e log público |
-| **Onboarding e KYB** | Cadastro direto pela aba de Governança | Validação jurídica (CNPJ, representante legal), prova de domínio via DNS TXT, consulta ao e-MEC e contrato comercial |
-| **Custódia de Chaves** | Chaves de teste locais (ou carteira de teste) | HSM gerenciado com controle de acesso por papéis (RBAC), auditoria ou custódia multi-parte (MPC) |
-| **Relayer e Pagamento de Gás** | Conta de Relayer operada no cliente/script submetendo assinaturas EIP-712 reais | Serviço backend dedicado de Relayer + tesouraria operacional convertendo cobrança em BRL para gás |
-| **Emissão e Aprovação** | Emissão direta em 1 clique (unitária ou lote gerado/CSV) | Fluxo opcional de aprovação em duas etapas (*two-person approval*), limites diários (*probation caps*) e integração com ERPs acadêmicos |
-| **Entrega ao Graduado** | Download do `.json` + cartão visual na tela com QR Code | Geração de PDF oficial com QR Code embutido, backup criptografado opcional e compartilhamento em 1 clique no LinkedIn/CV |
-| **Encerramento de Instituição** | Status `Closed` congelando o registro e preservando credenciais anteriores | Transferência formal de direitos de revogação para um custodiante designado on-chain |
-| **Web3 / Extensões Opcionais** | Não incluído | Soulbound Token (ERC-5192) opcional, prova criptográfica de posse do titular (nível *Strong*) e API de alto volume para RH/ATS |
-| **Jurídico e Compliance** | Escopo estritamente didático | Revisão por DPO sobre LGPD (hashes com salt), adequação regulatória (MEC Portaria 554/2019) e SLA empresarial |
+| Contratos | Contrato único (`DiploChain.sol`) com os três registros internos | Três contratos separados, auditados externamente e atualizáveis com time-lock |
+| Rede blockchain | Rede local Hardhat com deploy opcional na testnet Base Sepolia | Mainnet de uma L2 pública (Base, Polygon ou Arbitrum) com cross-anchoring periódico na Ethereum L1 |
+| Governança | Uma conta de governança e uma conta de recuperação por emissor | Multi-sig 3-of-5 na Fase 1 e consórcio de instituições na Fase 2, com time-lock de 7 dias |
+| Onboarding de emissores | Registro direto pela tela de Governança | Validação jurídica (CNPJ e representante legal), prova de domínio via DNS TXT e consulta ao e-MEC |
+| Custódia de chaves | Contas de demonstração locais embutidas no cliente | HSM gerenciado com controle de acesso por papéis ou custódia multi-parte (MPC) |
+| Relayer e cobrança | Conta de relayer operada no cliente submetendo assinaturas EIP-712 | Serviço backend dedicado de relayer e tesouraria operacional financiada por taxas em BRL |
+| Fluxo de emissão | Emissão direta em um clique (individual ou lote gerado) | Aprovação em duas etapas, limites diários de emissão e integração com ERPs acadêmicos |
+| Entrega ao titular | Download do arquivo `.json` e cartão na tela com QR Code | Geração de PDF com QR Code, backup criptografado opcional e compartilhamento no LinkedIn |
+| Encerramento do emissor | Status `Closed` preservando credenciais ancoradas antes do fechamento | Transferência do direito de revogação para um custodiante designado no contrato |
+| Extensões opcionais | Fora do escopo do MVP | Soulbound Token (ERC-5192), desafio criptográfico de posse do titular e API de verificação para RH/ATS |
+| Adequação legal | Escopo exclusivamente didático | Revisão por DPO quanto à LGPD e análise regulatória frente à Portaria MEC 554/2019 |

@@ -1,0 +1,703 @@
+{
+  "network": "localhost",
+  "chainId": 31337,
+  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "governance": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "demoIssuer": {
+    "did": "did:web:extensao.ufsc.br",
+    "issuerId": "0x01680eacc0ec9c87833e28913bba933459a143af717797729d200a110935f750",
+    "keyMethod": "did:web:extensao.ufsc.br#key-2026-1",
+    "keyId": "0x9dc1cb8370344007bbde69eb2fbef9238a7eb545f0686939d732539170e448dc",
+    "issuerSigner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "recoverySigner": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "relayer": "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "root",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint32",
+          "name": "count",
+          "type": "uint32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "schemaId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "keyId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "blockTimestamp",
+          "type": "uint64"
+        }
+      ],
+      "name": "AnchorRecorded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "leafHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum DiploChain.RevocationReason",
+          "name": "reason",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "revokedAt",
+          "type": "uint64"
+        }
+      ],
+      "name": "CredentialRevoked",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "did",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum DiploChain.AssuranceLevel",
+          "name": "assuranceLevel",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "recoverySigner",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "initialKeyId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "initialSigner",
+          "type": "address"
+        }
+      ],
+      "name": "IssuerRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum DiploChain.IssuerStatus",
+          "name": "status",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "timestamp",
+          "type": "uint64"
+        }
+      ],
+      "name": "IssuerStatusChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "keyId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "estimatedTime",
+          "type": "uint64"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "reportedAt",
+          "type": "uint64"
+        }
+      ],
+      "name": "KeyCompromised",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "oldKeyId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "newKeyId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "newSigner",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "timestamp",
+          "type": "uint64"
+        }
+      ],
+      "name": "KeyRotated",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "root",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint32",
+          "name": "count",
+          "type": "uint32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "schemaId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "keyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "issuerSig",
+          "type": "bytes"
+        }
+      ],
+      "name": "anchor",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "anchors",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint64",
+          "name": "blockTimestamp",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint32",
+          "name": "count",
+          "type": "uint32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "schemaId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "keyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bool",
+          "name": "exists",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "domainSeparator",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getIssuerIds",
+      "outputs": [
+        {
+          "internalType": "bytes32[]",
+          "name": "",
+          "type": "bytes32[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "getIssuerKeyIds",
+      "outputs": [
+        {
+          "internalType": "bytes32[]",
+          "name": "",
+          "type": "bytes32[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "governance",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "issuerKeys",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "signer",
+          "type": "address"
+        },
+        {
+          "internalType": "uint64",
+          "name": "validFrom",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint64",
+          "name": "validUntil",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint64",
+          "name": "compromisedAt",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bool",
+          "name": "exists",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "issuerList",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "issuers",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "did",
+          "type": "string"
+        },
+        {
+          "internalType": "enum DiploChain.AssuranceLevel",
+          "name": "assuranceLevel",
+          "type": "uint8"
+        },
+        {
+          "internalType": "enum DiploChain.IssuerStatus",
+          "name": "status",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "recoverySigner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint64",
+          "name": "closedAt",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bool",
+          "name": "exists",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "nonces",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "did",
+          "type": "string"
+        },
+        {
+          "internalType": "enum DiploChain.AssuranceLevel",
+          "name": "assuranceLevel",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "recoverySigner",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "initialKeyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "initialSigner",
+          "type": "address"
+        }
+      ],
+      "name": "registerIssuer",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "keyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint64",
+          "name": "estimatedTime",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "recoverySig",
+          "type": "bytes"
+        }
+      ],
+      "name": "reportCompromise",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "revocations",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "revokedAt",
+          "type": "uint64"
+        },
+        {
+          "internalType": "enum DiploChain.RevocationReason",
+          "name": "reason",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bool",
+          "name": "exists",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "leafHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "enum DiploChain.RevocationReason",
+          "name": "reason",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "keyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "issuerSig",
+          "type": "bytes"
+        }
+      ],
+      "name": "revoke",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "oldKeyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "newKeyId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "newSigner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "issuerSig",
+          "type": "bytes"
+        }
+      ],
+      "name": "rotateKey",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "issuerId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "enum DiploChain.IssuerStatus",
+          "name": "newStatus",
+          "type": "uint8"
+        }
+      ],
+      "name": "setIssuerStatus",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}
