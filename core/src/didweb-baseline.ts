@@ -91,7 +91,7 @@ async function main() {
     validFrom: "2025-01-10T12:00:00Z",
     credentialSubject: {
       id: "urn:diplochain:holder:999",
-      name: "Atacante com Chave Roubada",
+      name: "Attacker with Stolen Key",
       course: "Blockchain Architecture",
       workloadHours: 60
     },
