@@ -631,14 +631,23 @@ button.nav-pill:not(.active):hover:not(:disabled)::before {
 }
 
 .verdict-hero {
-  padding: 18px 22px;
+  flex: 1;
+  min-height: 220px;
+  padding: 22px 24px;
   border: var(--border);
   border-radius: var(--radius-lg);
-  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  animation: fadeUp 0.24s var(--ease);
+}
+
+.verdict-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -652,7 +661,6 @@ button.nav-pill:not(.active):hover:not(:disabled)::before {
   border-radius: var(--radius-pill);
   background: var(--ink);
   color: #ffffff;
-  margin-bottom: 8px;
 }
 
 .verdict-name {
@@ -663,16 +671,27 @@ button.nav-pill:not(.active):hover:not(:disabled)::before {
 }
 
 .verdict-course {
-  font-size: 0.9rem;
-  opacity: 0.8;
-  font-weight: 500;
-  margin-top: 2px;
+  font-size: 0.92rem;
+  opacity: 0.85;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.verdict-sub {
+  font-size: 0.82rem;
+  font-weight: 700;
+  opacity: 0.78;
+  margin-top: 6px;
 }
 
 .verdict-meta {
-  text-align: right;
-  font-size: 0.8rem;
-  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1.5px solid rgba(27, 27, 31, 0.16);
 }
 
 .dim-grid {
@@ -691,27 +710,23 @@ button.nav-pill:not(.active):hover:not(:disabled)::before {
   flex-direction: column;
   justify-content: space-between;
   gap: 10px;
-  transition: background 0.2s ease;
 }
 
 .toast.ok,
 .verdict-hero.ok,
-.dim-card.ok,
-.dim-card.idle-4 { background: var(--green-soft); }
+.dim-card.dim-4 { background: var(--green-soft); }
 
 .toast.warn,
 .verdict-hero.warn,
 .panel-amber,
-.dim-card.idle-1 { background: var(--amber-soft); }
+.dim-card.dim-1 { background: var(--amber-soft); }
 
 .toast.err,
-.verdict-hero.err,
-.dim-card.err { background: var(--pink-soft); }
+.verdict-hero.err { background: var(--pink-soft); }
 
-.dim-card.info,
-.dim-card.idle-2 { background: var(--sky-soft); }
+.dim-card.dim-2 { background: var(--sky-soft); }
 
-.dim-card.idle-3 { background: var(--surface-muted); }
+.dim-card.dim-3 { background: var(--surface-muted); }
 
 .dim-head {
   display: flex;
